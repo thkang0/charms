@@ -1,0 +1,62 @@
+#!/bin/bash
+
+set -e
+set -u
+
+## install lxc pre-configuration to setup multiple interfaces
+mkdir -p /usr/local/share/lxc/hooks/
+install -m 755 lxc/add-more-interfaces /usr/local/share/lxc/hooks/
+
+mkdir -p /usr/share/lxc/config/
+install -m 644 lxc/ubuntu-cloud.trusty.conf /usr/share/lxc/config/
+
+## network interfaces
+apt-get update || true
+apt-get install -y ethtool bridge-utils 
+
+
+jujubr0_ip=$(ip a s juju-br0 | grep inet | grep -v inet6 | awk '{print $2}' | cut -d '/' -f 1)
+eth1_ip=$(ip a s eth1 | grep inet | grep -v inet6 | awk '{print $2}' | cut -d '/' -f 1)
+eth2_ip=$(ip a s eth2 | grep inet | grep -v inet6 | awk '{print $2}' | cut -d '/' -f 1)
+eth3_ip=$(ip a s eth3 | grep inet | grep -v inet6 | awk '{print $2}' | cut -d '/' -f 1)
+cat > /etc/network/interfaces <<EOF
+auto lo
+iface lo inet loopback
+
+iface eth0 inet manual
+iface eth1 inet manual
+iface eth2 inet manual
+iface eth3 inet manual
+
+auto juju-br0
+iface juju-br0 inet static
+    address ${jujubr0_ip}
+    netmask 255.255.255.0
+    gateway 192.168.1.2
+    dns-nameservers 192.168.1.10
+    bridge_ports eth0
+
+auto br-eth1
+iface br-eth1 inet static
+    address ${eth1_ip}
+    netmask 255.255.255.0
+    bridge_ports eth1
+
+
+auto br-eth2
+iface br-eth2 inet static
+    address ${eth2_ip}
+    netmask 255.255.255.0
+    bridge_ports eth2
+
+auto br-eth3
+iface br-eth3 inet static
+    address ${eth3_ip}
+    netmask 255.255.255.0
+    bridge_ports eth3
+
+EOF
+
+reboot
+#shutdown -r now
+#juju-reboot --now

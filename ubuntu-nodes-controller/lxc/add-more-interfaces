@@ -1,0 +1,71 @@
+#!/bin/bash
+
+set -e
+set -u
+
+cat <<EOF >> "$LXC_CONFIG_FILE"
+
+## added by ubuntu-nodes-controller charm
+lxc.network.type = veth
+lxc.network.flags = up
+lxc.network.link = br-eth1
+lxc.network.name = eth1
+lxc.network.hwaddr = 00:16:3e:xx:xx:xx
+
+lxc.network.type = veth
+lxc.network.flags = up
+lxc.network.link = br-eth2
+lxc.network.name = eth2
+lxc.network.hwaddr = 00:16:3e:xx:xx:xx
+
+lxc.network.type = veth
+lxc.network.flags = up
+lxc.network.link = br-eth3
+lxc.network.name = eth3
+lxc.network.hwaddr = 00:16:3e:xx:xx:xx
+
+EOF
+
+USERDATA="$LXC_ROOTFS_PATH/var/lib/cloud/seed/nocloud-net/user-data"
+
+additional_interfaces="
+- primary_ip=\$(ip a s eth0 | grep -w inet | cut -d/ -f1 | awk '{print \$NF}')
+- last_octet=\$(echo \"\$primary_ip\" | cut -d. -f4)
+- |
+  cat <<EOF >> /etc/network/interfaces.d/additional-interfaces
+  ## added by ubuntu-nodes-controller charm
+  ## those interfaces will be brought up by an upstart job, additional-interfaces
+  ## LP: #1483932
+  auto eth1
+  iface eth1 inet static
+      address 192.168.2.\${last_octet}
+      netmask 255.255.255.0
+
+  auto eth2
+  iface eth2 inet static
+      address 192.168.3.\${last_octet}
+      netmask 255.255.255.0
+
+  auto eth3
+  iface eth3 inet static
+      address 192.168.0.\${last_octet}
+      netmask 255.255.255.0
+
+  EOF
+- machine_agent=\$(hostname | sed -e 's/^juju-/jujud-/')
+- |
+  cat <<EOF > /etc/init/additional-interfaces.conf
+  ## added by ubuntu-nodes-controller charm
+  ## LP: #1483932
+  start on started \${machine_agent}
+
+  script
+    sleep 10
+    ifup -a -i /etc/network/interfaces.d/additional-interfaces
+  end script
+  EOF
+"
+additional_interfaces=$(echo "$additional_interfaces" | sed -e 's/$/\\n/' | tr -d '\n')
+
+sed -i.orig -e "s@^runcmd:@\0$additional_interfaces@" \
+    "$USERDATA"
